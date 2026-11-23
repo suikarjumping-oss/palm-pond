@@ -209,3 +209,10 @@ export const LANTERN_COLORS: readonly string[] = ['#ffb35c', '#ff9248', '#ffd27a
 
 /** 新生小魚的提示顯示多久。 */
 export const NEWBORN_NOTICE_MS = 4000;
+
+/** 放大：最大倍率、按鈕一按的倍率、動畫時間。 */
+export const ZOOM_MAX = 3;
+export const ZOOM_BUTTON = 1.8;
+export const ZOOM_ANIM_MS = 350;
+/** 滑鼠滾輪每格的縮放比例。 */
+export const ZOOM_WHEEL_STEP = 0.0015;

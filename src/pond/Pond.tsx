@@ -1,10 +1,10 @@
 /** 池子主畫面。玩法在 engine.ts，存檔在 store.ts，天氣在 weather.ts，天色季節在 sky.ts。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import {
   KOI_PROFILES, LANTERN_COLORS, LANTERN_COUNT, NEWBORN_NOTICE_MS, NIGHT_MAX_ALPHA, NIGHT_RGB,
   REFLECTION_X_MAX, REFLECTION_X_MIN, REFLECTION_Y_MAX, REFLECTION_Y_MIN, SITE_TITLE, SKY_REFRESH_MS,
-  TOSS_COOLDOWN_MS, WATER_BOUNDS, type KoiProfile,
+  TOSS_COOLDOWN_MS, WATER_BOUNDS, ZOOM_ANIM_MS, ZOOM_BUTTON, ZOOM_WHEEL_STEP, type KoiProfile,
 } from './constants';
 import { localDateKey } from './dates';
 import { createKoiRenderer, type Reflection, type Ripple } from './draw';
@@ -13,6 +13,7 @@ import { awayToday, profilesFromRows } from './fish';
 import { darkness, rainRipplesDue, seasonOf, type Season } from './sky';
 import { createPondStore, type PondStore } from './store';
 import { weatherAt, type PondEnv } from './weather';
+import { centerOn, IDENTITY, pinchView, viewTransform, zoomAt, type Pinch, type View } from './zoom';
 import pondAutumn from '../assets/koi-lake.webp';
 import pondSpring from '../assets/koi-lake-spring.webp';
 import pondSummer from '../assets/koi-lake-summer.webp';
@@ -127,6 +128,15 @@ export default function Pond({ store: givenStore, now = defaultNow }: Props) {
   const [hinted, setHinted] = useState(readHinted);
   const [tag, setTag] = useState<NameTag | null>(null);
   const [newborn, setNewborn] = useState<string | null>(null);
+  const shellRef = useRef<HTMLElement | null>(null);
+  const zoomLayerRef = useRef<HTMLDivElement | null>(null);
+  const waterRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<View>(IDENTITY);
+  const touchesRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<Pinch | null>(null);
+  /** 這次手指接觸裡出現過雙指：整段都不撒飼料。 */
+  const gestureRef = useRef(false);
+  const [zoomed, setZoomed] = useState(false);
 
   if (storeRef.current === null) storeRef.current = createPondStore();
   if (rendererRef.current === null) rendererRef.current = createKoiRenderer();
@@ -219,6 +229,8 @@ export default function Pond({ store: givenStore, now = defaultNow }: Props) {
         }
       }
       ripplesRef.current = ripplesRef.current.filter((ripple) => ts - ripple.at < RIPPLE_MS);
+      const box = canvas.getBoundingClientRect();
+      if (Math.abs(box.width - sizeRef.current.w) > 0.5 || Math.abs(box.height - sizeRef.current.h) > 0.5) resize();
       const { w, h } = sizeRef.current;
       if (ctx && stateRef.current && rendererRef.current && w > 0 && h > 0) {
         const dpr = window.devicePixelRatio || 1;
@@ -271,6 +283,7 @@ export default function Pond({ store: givenStore, now = defaultNow }: Props) {
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (gestureRef.current) return;
     const { rect, hasBox, x, y } = canvasPoint(event);
     const state = stateRef.current;
     if (!state) return;
@@ -299,7 +312,7 @@ export default function Pond({ store: givenStore, now = defaultNow }: Props) {
 
   const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const state = stateRef.current;
-    if (!state) return;
+    if (!state || gestureRef.current) return;
     const { rect, x, y } = canvasPoint(event);
     const time = performance.now();
     const previous = pointerSampleRef.current;
@@ -316,27 +329,113 @@ export default function Pond({ store: givenStore, now = defaultNow }: Props) {
     if (stateRef.current) stateRef.current = setPointer(stateRef.current, null);
   };
 
+  const shellPoint = (clientX: number, clientY: number) => {
+    const rect = shellRef.current?.getBoundingClientRect();
+    return { x: clientX - (rect?.left ?? 0), y: clientY - (rect?.top ?? 0), w: rect?.width ?? 0, h: rect?.height ?? 0 };
+  };
+
+  const applyView = (view: View, animate: boolean) => {
+    viewRef.current = view;
+    const layer = zoomLayerRef.current;
+    if (layer) {
+      layer.style.transition = animate ? `transform ${ZOOM_ANIM_MS}ms ease` : 'none';
+      layer.style.transform = viewTransform(view);
+    }
+    setZoomed(view.s > 1.01);
+  };
+
+  const pinchStart = () => {
+    const [a, b] = [...touchesRef.current.values()];
+    pinchRef.current = {
+      start: viewRef.current,
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      midX: (a.x + b.x) / 2,
+      midY: (a.y + b.y) / 2,
+    };
+  };
+
+  const onShellPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'touch') return;
+    const point = shellPoint(event.clientX, event.clientY);
+    touchesRef.current.set(event.pointerId, { x: point.x, y: point.y });
+    if (touchesRef.current.size === 2) {
+      gestureRef.current = true;
+      clearPointer();
+      pinchStart();
+    }
+  };
+
+  const onShellPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!touchesRef.current.has(event.pointerId)) return;
+    const point = shellPoint(event.clientX, event.clientY);
+    touchesRef.current.set(event.pointerId, { x: point.x, y: point.y });
+    const pinch = pinchRef.current;
+    if (!pinch || touchesRef.current.size !== 2) return;
+    const [a, b] = [...touchesRef.current.values()];
+    applyView(pinchView(pinch, Math.hypot(a.x - b.x, a.y - b.y), (a.x + b.x) / 2, (a.y + b.y) / 2, point.w, point.h), false);
+  };
+
+  const onShellPointerEnd = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!touchesRef.current.delete(event.pointerId)) return;
+    if (touchesRef.current.size === 2) pinchStart();
+    else pinchRef.current = null;
+    if (touchesRef.current.size === 0) gestureRef.current = false;
+  };
+
+  const onWheel = (event: ReactWheelEvent<HTMLElement>) => {
+    const point = shellPoint(event.clientX, event.clientY);
+    if (point.w <= 0) return;
+    const s = viewRef.current.s * Math.exp(-event.deltaY * ZOOM_WHEEL_STEP);
+    applyView(zoomAt(viewRef.current, s, point.x, point.y, point.w, point.h), false);
+  };
+
+  const toggleZoom = () => {
+    const shell = shellRef.current?.getBoundingClientRect();
+    const waterBox = waterRef.current?.getBoundingClientRect();
+    if (!shell || !waterBox || shell.width <= 0) return;
+    if (viewRef.current.s > 1.01) {
+      applyView(IDENTITY, true);
+      return;
+    }
+    const { s, tx, ty } = viewRef.current;
+    const cx = (waterBox.left + waterBox.width / 2 - shell.left - tx) / s;
+    const cy = (waterBox.top + waterBox.height / 2 - shell.top - ty) / s;
+    applyView(centerOn(cx, cy, ZOOM_BUTTON, shell.width, shell.height), true);
+  };
+
   const water = {
     left: `${WATER_BOUNDS.left}%`, top: `${WATER_BOUNDS.top}%`,
     width: `${WATER_BOUNDS.width}%`, height: `${WATER_BOUNDS.height}%`,
   };
 
   return (
-    <main className="pp-shell">
-      <div className="pp-scene">
-        <img className="pp-bg" src={SEASON_BACKGROUNDS[seasonOf(current)]} alt="" draggable={false} />
-        <div className="pp-night" aria-hidden="true"
-          style={{ background: `rgba(${NIGHT_RGB}, 1)`, opacity: dark * NIGHT_MAX_ALPHA }} />
-        <div className="pp-water" style={water}>
-          <canvas ref={canvasRef} className="pp-canvas" aria-label="池面，點一下撒飼料"
-            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={clearPointer}
-            onPointerCancel={clearPointer} onPointerLeave={clearPointer} />
-          {tag && (
-            <span key={tag.key} className="pp-name" role="status"
-              style={{ left: `${tag.x * 100}%`, top: `${tag.y * 100}%` }}>{tag.name}</span>
-          )}
+    <main ref={shellRef} className="pp-shell" onPointerDownCapture={onShellPointerDown}
+      onPointerMoveCapture={onShellPointerMove} onPointerUpCapture={onShellPointerEnd}
+      onPointerCancelCapture={onShellPointerEnd} onWheel={onWheel}>
+      <div ref={zoomLayerRef} className="pp-zoom">
+        <div className="pp-scene">
+          <img className="pp-bg" src={SEASON_BACKGROUNDS[seasonOf(current)]} alt="" draggable={false} />
+          <div className="pp-night" aria-hidden="true"
+            style={{ background: `rgba(${NIGHT_RGB}, 1)`, opacity: dark * NIGHT_MAX_ALPHA }} />
+          <div ref={waterRef} className="pp-water" style={water}>
+            <canvas ref={canvasRef} className="pp-canvas" aria-label="池面，點一下撒飼料"
+              onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={clearPointer}
+              onPointerCancel={clearPointer} onPointerLeave={clearPointer} />
+            {tag && (
+              <span key={tag.key} className="pp-name" role="status"
+                style={{ left: `${tag.x * 100}%`, top: `${tag.y * 100}%` }}>{tag.name}</span>
+            )}
+          </div>
         </div>
       </div>
+      <button type="button" className="pp-zoom-button" aria-label={zoomed ? '縮回全景' : '放大'}
+        aria-pressed={zoomed} onClick={toggleZoom}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="M15.5 15.5 21 21M7.5 10.5h6" />
+          {!zoomed && <path d="M10.5 7.5v6" />}
+        </svg>
+      </button>
       <h1 className="pp-title">{SITE_TITLE}</h1>
       {newborn && <p className="pp-notice" role="status">池裡多了一隻小魚：{newborn}</p>}
       {!hinted && <p className="pp-hint">點水面撒一點飼料</p>}

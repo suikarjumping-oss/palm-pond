@@ -6,7 +6,7 @@
   margin: 0 auto;
   overflow: hidden;
   background: #1f8576; /* 底圖兩側沒蓋到時，接近湖水的顏色 */
-  touch-action: manipulation;
+  touch-action: none; /* 雙指縮放由池子自己處理，不讓瀏覽器放大整頁 */
 }
 /* 場景鎖住底圖比例、撐滿高度、水平置中；手機比底圖窄，兩側會被裁掉一點。WATER_BOUNDS 以這個盒子為準。 */
 .pp-scene {
@@ -107,4 +107,38 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pp-notice { animation: none; }
+}
+/* 放大層：整個場景一起縮放；位移和倍率由 Pond.tsx 直接寫在 style.transform。 */
+.pp-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.pp-zoom-button {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 3;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(246, 239, 220, 0.5);
+  border-radius: 999px;
+  background: rgba(20, 30, 30, 0.62);
+  color: #f6efdc;
+  cursor: pointer;
+}
+.pp-zoom-button svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.pp-zoom-button:focus-visible {
+  outline: 3px solid #ffd27a;
+  outline-offset: 2px;
 }
