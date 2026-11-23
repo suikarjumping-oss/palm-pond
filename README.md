@@ -22,4 +22,4 @@ npm run dev
 
 ## 部署
 
-Vercel 匯入這個 repo，Framework 選 Vite，其他預設即可。上線後把 `index.html` 的 `og:image` 改成完整網址（例如 `https://<網域>/og.jpg`），LINE 分享才會出預覽圖。
+Vercel 匯入這個 repo，Framework 選 Vite，其他預設即可。正式網址：https://palm-pond.vercel.app/ 。換網域時要一起改 `index.html` 的 `og:image`、`og:url`（LINE 分享預覽圖要完整網址）。
