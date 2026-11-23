@@ -1,0 +1,24 @@
+# 掌心京都
+
+一池錦鯉。點水面撒飼料，連續幾天來餵會生小魚，小魚會慢慢長大；每天有一兩隻魚出門，隔天回來。晝夜跟著訪客當地時間，季節跟著月份換底圖，天氣隨機（每 3 小時一段）。
+
+- 純前端（Vite + React + TypeScript），沒有後端、不連網、不收集任何資料。
+- 每位訪客的池子只存在自己瀏覽器的 localStorage（`palm-pond-v1`）；換裝置或清除網站資料就是新的池子。
+
+## 開發
+
+```bash
+npm ci
+npm run dev
+```
+
+檢查：`npx tsc -b`、`npm run lint`、`npm test`、`npm run build`。
+
+## 改東西
+
+- 所有數字、魚、天氣機率、小魚名字、網頁名稱：`src/pond/constants.ts`（網頁名稱另外改 `index.html` 的 `<title>` 和 `og:title`）。
+- 玩法：`src/pond/engine.ts`；畫魚：`src/pond/draw.ts`；存檔：`src/pond/store.ts`。
+
+## 部署
+
+Vercel 匯入這個 repo，Framework 選 Vite，其他預設即可。上線後把 `index.html` 的 `og:image` 改成完整網址（例如 `https://<網域>/og.jpg`），LINE 分享才會出預覽圖。

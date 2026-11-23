@@ -1,0 +1,11 @@
+:root {
+  --font-brand: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body {
+  background: #0f2a2a;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
