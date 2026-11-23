@@ -173,7 +173,7 @@ export const REFLECTION_Y_MAX = 0.45;
 export const SKY_REFRESH_MS = 60 * 1000;
 
 /** 網頁名稱；改名只改這裡和 index.html 的 <title>／og:title。 */
-export const SITE_TITLE = '掌心京都';
+export const SITE_TITLE = '半畝塘';
 
 /** 新生小魚的名字，依序抽還沒用過的；用完了就加編號。 */
 export const FRY_NAMES: readonly string[] = [
